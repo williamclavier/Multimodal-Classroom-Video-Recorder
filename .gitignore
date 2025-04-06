@@ -173,5 +173,11 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
+# VS Code
+.DS_Store
+
 # Custom .gitignore begins
 data/*
+models/pose_estimation/models/pose_estimation/*
+output/*
+requirements.txt
