@@ -2,39 +2,128 @@ import cv2
 import numpy as np
 import time
 from pathlib import Path
-import mediapipe as mp
+import math
+import os
 
 class ProfessorPoseDetector:
     def __init__(self):
         """
-        Initialize the pose detector with MediaPipe
+        Initialize the pose detector with OpenCV DNN
         """
-        # Initialize MediaPipe pose detection
-        self.mp_pose = mp.solutions.pose
-        self.pose = self.mp_pose.Pose(
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
+        # Load the pre-trained model
+        self.model_dir = Path("../pose_estimation/models")
+        self.model_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Model file paths
+        proto_file = "pose_deploy_linevec.prototxt"
+        model_file = "pose_iter_440000.caffemodel"
+        
+        # Download models if not present
+        self._ensure_model_files_exist(proto_file, model_file)
+        
+        # Load model
+        self.net = cv2.dnn.readNetFromCaffe(
+            str(self.model_dir / proto_file), 
+            str(self.model_dir / model_file)
         )
+        
+        # Model parameters
+        self.in_width = 368
+        self.in_height = 368
+        self.threshold = 0.1
+        
+        # Define the body parts
+        self.BODY_PARTS = {
+            0: "Nose", 1: "Neck", 2: "RShoulder", 3: "RElbow", 4: "RWrist",
+            5: "LShoulder", 6: "LElbow", 7: "LWrist", 8: "RHip", 9: "RKnee",
+            10: "RAnkle", 11: "LHip", 12: "LKnee", 13: "LAnkle", 14: "REye",
+            15: "LEye", 16: "REar", 17: "LEar"
+        }
+        
+        # Define the pairs of body parts for drawing skeleton lines
+        self.POSE_PAIRS = [
+            [1, 2], [1, 5], [2, 3], [3, 4], [5, 6], [6, 7],
+            [1, 8], [8, 9], [9, 10], [1, 11], [11, 12], [12, 13],
+            [1, 0], [0, 14], [14, 16], [0, 15], [15, 17]
+        ]
         
         # For smoothing
         self.recent_poses = []
         self.max_recent_poses = 5
+    
+    def _ensure_model_files_exist(self, proto_file, model_file):
+        """Download model files if they don't exist"""
+        proto_path = self.model_dir / proto_file
+        model_path = self.model_dir / model_file
         
-        # Define body parts we care about
-        self.BODY_PARTS = {
-            "LEFT_SHOULDER": self.mp_pose.PoseLandmark.LEFT_SHOULDER,
-            "RIGHT_SHOULDER": self.mp_pose.PoseLandmark.RIGHT_SHOULDER,
-            "LEFT_ELBOW": self.mp_pose.PoseLandmark.LEFT_ELBOW,
-            "RIGHT_ELBOW": self.mp_pose.PoseLandmark.RIGHT_ELBOW,
-            "LEFT_WRIST": self.mp_pose.PoseLandmark.LEFT_WRIST,
-            "RIGHT_WRIST": self.mp_pose.PoseLandmark.RIGHT_WRIST,
-            "LEFT_HIP": self.mp_pose.PoseLandmark.LEFT_HIP,
-            "RIGHT_HIP": self.mp_pose.PoseLandmark.RIGHT_HIP,
-            "LEFT_KNEE": self.mp_pose.PoseLandmark.LEFT_KNEE,
-            "RIGHT_KNEE": self.mp_pose.PoseLandmark.RIGHT_KNEE,
-            "LEFT_ANKLE": self.mp_pose.PoseLandmark.LEFT_ANKLE,
-            "RIGHT_ANKLE": self.mp_pose.PoseLandmark.RIGHT_ANKLE
-        }
+        # Download proto file if needed
+        if not proto_path.exists():
+            print(f"Downloading {proto_file}...")
+            proto_url = "https://raw.githubusercontent.com/CMU-Perceptual-Computing-Lab/openpose/master/models/pose/coco/pose_deploy_linevec.prototxt"
+            os.system(f"curl -o {proto_path} {proto_url}")
+        
+        # Download model file if needed - using a direct model URL instead of Google Drive
+        if not model_path.exists():
+            print(f"Downloading {model_file}...")
+            print("This may take a while as it's a large file (200MB)...")
+            print("Attempting multiple download sources...")
+            
+            # Try multiple sources for the model file
+            download_success = False
+            
+            # Alternative model sources
+            model_urls = [
+                "https://huggingface.co/camenduru/openpose/resolve/f5bb0c0a16060ac8b373472a5456c76bd68eb202/pose_iter_440000.caffemodel"
+            ]
+            
+            for url in model_urls:
+                try:
+                    print(f"Trying to download from: {url}")
+                    # Use curl with retry and progress display
+                    download_cmd = f"curl -L -o {model_path} {url} --retry 3 --retry-delay 2 --progress-bar"
+                    result = os.system(download_cmd)
+                    
+                    if result == 0 and model_path.exists() and model_path.stat().st_size > 1000000:  # Ensure file is at least 1MB
+                        download_success = True
+                        print(f"Successfully downloaded model from {url}")
+                        break
+                    else:
+                        print(f"Download from {url} failed or file is incomplete")
+                except Exception as e:
+                    print(f"Error downloading from {url}: {str(e)}")
+            
+            if not download_success:
+                print("\nDirect download failed. Please download the model manually from one of these sources:")
+                for url in model_urls:
+                    print(f"- {url}")
+                print(f"And save it to: {model_path}")
+                
+                # Try to run without the model to see if it's already downloaded to a standard location
+                standard_locations = [
+                    "/usr/local/share/OpenPose/models/pose/coco/pose_iter_440000.caffemodel",
+                    "/usr/share/OpenPose/models/pose/coco/pose_iter_440000.caffemodel", 
+                    str(Path.home() / "Downloads" / "pose_iter_440000.caffemodel")
+                ]
+                
+                for loc in standard_locations:
+                    if Path(loc).exists():
+                        print(f"Found model at standard location: {loc}")
+                        print(f"Copying to: {model_path}")
+                        import shutil
+                        shutil.copy(loc, model_path)
+                        download_success = True
+                        break
+                
+                if not download_success:
+                    raise FileNotFoundError(f"Could not download or find model file. Please download manually.")
+        
+        # Verify files exist
+        if not proto_path.exists() or not model_path.exists():
+            raise FileNotFoundError(f"Model files could not be downloaded. Please download manually:\n"
+                                   f"- Proto file: {proto_path}\n"
+                                   f"- Model file: {model_path}")
+        else:
+            print("Model files found and ready.")
     
     def detect_pose(self, frame):
         """
@@ -45,42 +134,74 @@ class ProfessorPoseDetector:
             frame: Frame with detected pose
             pose_info: Dictionary containing pose information
         """
-        # Convert to RGB for MediaPipe
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = self.pose.process(frame_rgb)
+        frame_height, frame_width = frame.shape[:2]
+        
+        # Prepare input blob
+        input_blob = cv2.dnn.blobFromImage(
+            frame, 1.0 / 255, (self.in_width, self.in_height),
+            (0, 0, 0), swapRB=False, crop=False
+        )
+        
+        # Set input and make forward pass
+        self.net.setInput(input_blob)
+        output = self.net.forward()
+        
+        # Get dimensions
+        H = output.shape[2]
+        W = output.shape[3]
+        
+        # List to store detected points
+        points = []
+        
+        # For calculating confidence
+        point_confidence = []
+        
+        # Process each body part
+        for i in range(len(self.BODY_PARTS)):
+            # Probability map for current part
+            prob_map = output[0, i, :, :]
+            
+            # Find max probability point
+            _, prob, _, point = cv2.minMaxLoc(prob_map)
+            
+            # Scale to frame size
+            x = int((frame_width * point[0]) / W)
+            y = int((frame_height * point[1]) / H)
+            
+            if prob > self.threshold:
+                points.append((x, y))
+                point_confidence.append(prob)
+            else:
+                points.append(None)
+                point_confidence.append(0)
         
         # Create a copy for drawing
         annotated_frame = frame.copy()
         
-        # Initialize pose info
-        pose_info = {
-            "pose_type": "Unknown",
-            "confidence": 0.0,
-            "is_pointing": False,
-            "pointing_direction": None
-        }
+        # Draw the skeleton
+        for pair in self.POSE_PAIRS:
+            partA = pair[0]
+            partB = pair[1]
+            
+            if points[partA] and points[partB]:
+                cv2.line(annotated_frame, points[partA], points[partB], (0, 255, 255), 2)
+                cv2.circle(annotated_frame, points[partA], 5, (0, 0, 255), thickness=-1)
+                cv2.circle(annotated_frame, points[partB], 5, (0, 0, 255), thickness=-1)
         
-        if results.pose_landmarks:
-            # Draw landmarks
-            mp.solutions.drawing_utils.draw_landmarks(
-                annotated_frame,
-                results.pose_landmarks,
-                self.mp_pose.POSE_CONNECTIONS
-            )
-            
-            # Analyze pose
-            pose_info = self._analyze_pose(results.pose_landmarks.landmark, annotated_frame)
-            
-            # Add text with pose information
-            self._add_pose_info_text(annotated_frame, pose_info)
+        # Analyze pose
+        pose_info = self._analyze_pose(points, point_confidence, annotated_frame)
+        
+        # Add text with pose information
+        self._add_pose_info_text(annotated_frame, pose_info)
         
         return annotated_frame, pose_info
     
-    def _analyze_pose(self, landmarks, frame):
+    def _analyze_pose(self, points, point_confidence, frame):
         """
         Analyze the detected pose and determine if the professor is pointing
         Args:
-            landmarks: Detected keypoints
+            points: Detected keypoints
+            point_confidence: Confidence for each keypoint
             frame: Frame for visualization
         Returns:
             dict: Pose information
@@ -93,52 +214,67 @@ class ProfessorPoseDetector:
             "pointing_direction": None
         }
         
-        # Check if we have the necessary landmarks
-        if not all(key in landmarks for key in self.BODY_PARTS.values()):
+        # Basic check if we have enough points
+        if not points[1] or not points[2] or not points[5]:  # Neck, shoulders
             return pose_info
         
         # Calculate overall confidence (average of detected points)
-        confidence = np.mean([landmarks[key].visibility for key in self.BODY_PARTS.values()]) * 100
+        detected_points = sum(1 for p in points if p is not None)
+        point_confidence_avg = np.mean([c for c in point_confidence if c > 0]) * 100
+        confidence = (detected_points / len(points)) * 100
         
         # Extract key points
-        left_shoulder = landmarks[self.BODY_PARTS["LEFT_SHOULDER"]]
-        right_shoulder = landmarks[self.BODY_PARTS["RIGHT_SHOULDER"]]
-        left_elbow = landmarks[self.BODY_PARTS["LEFT_ELBOW"]]
-        right_elbow = landmarks[self.BODY_PARTS["RIGHT_ELBOW"]]
-        left_wrist = landmarks[self.BODY_PARTS["LEFT_WRIST"]]
-        right_wrist = landmarks[self.BODY_PARTS["RIGHT_WRIST"]]
+        neck = points[1]
+        right_shoulder = points[2]
+        left_shoulder = points[5]
         
         # Check for pointing with right arm
         right_pointing = False
-        if right_shoulder.visibility > 0.7 and right_elbow.visibility > 0.7 and right_wrist.visibility > 0.7:
+        right_angle = 0
+        if points[3] and points[4]:  # Right elbow and wrist
+            right_elbow = points[3]
+            right_wrist = points[4]
+            
             # Calculate angle
             right_angle = self._calculate_angle(
-                [right_shoulder.x, right_shoulder.y],
-                [right_elbow.x, right_elbow.y],
-                [right_wrist.x, right_wrist.y]
+                right_shoulder, right_elbow, right_wrist
             )
+            
+            # Draw angle on frame
+            if right_elbow[0] < frame.shape[1] - 80:  # Ensure text fits on screen
+                cv2.putText(frame, f"R: {right_angle:.1f}°", 
+                           (right_elbow[0] + 10, right_elbow[1]), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
             
             # Check if pointing (arm nearly straight and horizontal)
             is_arm_extended = right_angle > 150
-            is_horizontal = abs(right_wrist.x - right_elbow.x) > abs(right_wrist.y - right_elbow.y)
-            wrist_right_of_elbow = right_wrist.x > right_elbow.x
+            is_horizontal = abs(right_wrist[0] - right_elbow[0]) > abs(right_wrist[1] - right_elbow[1])
+            wrist_right_of_elbow = right_wrist[0] > right_elbow[0]
             
             right_pointing = is_arm_extended and is_horizontal and wrist_right_of_elbow
         
         # Check for pointing with left arm
         left_pointing = False
-        if left_shoulder.visibility > 0.7 and left_elbow.visibility > 0.7 and left_wrist.visibility > 0.7:
+        left_angle = 0
+        if points[6] and points[7]:  # Left elbow and wrist
+            left_elbow = points[6]
+            left_wrist = points[7]
+            
             # Calculate angle
             left_angle = self._calculate_angle(
-                [left_shoulder.x, left_shoulder.y],
-                [left_elbow.x, left_elbow.y],
-                [left_wrist.x, left_wrist.y]
+                left_shoulder, left_elbow, left_wrist
             )
+            
+            # Draw angle on frame
+            if left_elbow[0] > 80:  # Ensure text fits on screen
+                cv2.putText(frame, f"L: {left_angle:.1f}°", 
+                           (left_elbow[0] - 80, left_elbow[1]), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
             
             # Check if pointing (arm nearly straight and horizontal)
             is_arm_extended = left_angle > 150
-            is_horizontal = abs(left_wrist.x - left_elbow.x) > abs(left_wrist.y - left_elbow.y)
-            wrist_left_of_elbow = left_wrist.x < left_elbow.x
+            is_horizontal = abs(left_wrist[0] - left_elbow[0]) > abs(left_wrist[1] - left_elbow[1])
+            wrist_left_of_elbow = left_wrist[0] < left_elbow[0]
             
             left_pointing = is_arm_extended and is_horizontal and wrist_left_of_elbow
         
@@ -335,7 +471,6 @@ def process_video(video_path, output_path):
         # Release resources
         cap.release()
         out.release()
-        detector.pose.close()
         cv2.destroyAllWindows()
         print(f"Processing completed. Processed {frame_count} frames.")
 
@@ -349,7 +484,7 @@ def main():
     output_dir.mkdir(exist_ok=True)
     
     # Specific video to process
-    video_file = "Lecture1-Prof.mp4"
+    video_file = "Lecture-Prof.mp4"
     video_path = data_dir / video_file
     
     if not video_path.exists():
