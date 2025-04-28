@@ -2,253 +2,368 @@ import cv2
 import numpy as np
 import time
 from pathlib import Path
-import os
+import mediapipe as mp
 
-class PoseDetector:
-    def __init__(self, proto_file=None, model_file=None):
+class ProfessorPoseDetector:
+    def __init__(self):
         """
-        Initialize the pose detector with OpenPose model
-        Args:
-            proto_file: Path to the .prototxt file containing the model architecture
-            model_file: Path to the .caffemodel file containing the model weights
+        Initialize the pose detector with MediaPipe
         """
-        # Set default paths if not provided
-        if proto_file is None:
-            proto_file = "models/pose_estimation/pose_deploy_linevec.prototxt"
-        if model_file is None:
-            model_file = "models/pose_estimation/pose_iter_440000.caffemodel"
-            
-        self.net = cv2.dnn.readNetFromCaffe(proto_file, model_file)
-        self.in_height = 368
-        self.in_width = 368
-        self.threshold = 0.1
+        # Initialize MediaPipe pose detection
+        self.mp_pose = mp.solutions.pose
+        self.pose = self.mp_pose.Pose(
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5
+        )
         
-        # Define body parts and their connections
+        # For smoothing
+        self.recent_poses = []
+        self.max_recent_poses = 5
+        
+        # Define body parts we care about
         self.BODY_PARTS = {
-            0: "Nose", 1: "Neck", 2: "RShoulder", 3: "RElbow", 4: "RWrist",
-            5: "LShoulder", 6: "LElbow", 7: "LWrist", 8: "RHip", 9: "RKnee",
-            10: "RAnkle", 11: "LHip", 12: "LKnee", 13: "LAnkle", 14: "REye",
-            15: "LEye", 16: "REar", 17: "LEar"
+            "LEFT_SHOULDER": self.mp_pose.PoseLandmark.LEFT_SHOULDER,
+            "RIGHT_SHOULDER": self.mp_pose.PoseLandmark.RIGHT_SHOULDER,
+            "LEFT_ELBOW": self.mp_pose.PoseLandmark.LEFT_ELBOW,
+            "RIGHT_ELBOW": self.mp_pose.PoseLandmark.RIGHT_ELBOW,
+            "LEFT_WRIST": self.mp_pose.PoseLandmark.LEFT_WRIST,
+            "RIGHT_WRIST": self.mp_pose.PoseLandmark.RIGHT_WRIST,
+            "LEFT_HIP": self.mp_pose.PoseLandmark.LEFT_HIP,
+            "RIGHT_HIP": self.mp_pose.PoseLandmark.RIGHT_HIP,
+            "LEFT_KNEE": self.mp_pose.PoseLandmark.LEFT_KNEE,
+            "RIGHT_KNEE": self.mp_pose.PoseLandmark.RIGHT_KNEE,
+            "LEFT_ANKLE": self.mp_pose.PoseLandmark.LEFT_ANKLE,
+            "RIGHT_ANKLE": self.mp_pose.PoseLandmark.RIGHT_ANKLE
         }
-        
-        self.POSE_PAIRS = [
-            [1,2], [1,5], [2,3], [3,4], [5,6], [6,7],
-            [1,8], [8,9], [9,10], [1,11], [11,12], [12,13],
-            [1,0], [0,14], [14,16], [0,15], [15,17]
-        ]
-
+    
     def detect_pose(self, frame):
         """
         Detect poses in the given frame
         Args:
             frame: Input video frame
         Returns:
-            frame: Frame with detected poses
-            poses: List of detected poses
+            frame: Frame with detected pose
+            pose_info: Dictionary containing pose information
         """
-        frame_height, frame_width = frame.shape[:2]
+        # Convert to RGB for MediaPipe
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = self.pose.process(frame_rgb)
         
-        # Prepare the frame for the network
-        inp_blob = cv2.dnn.blobFromImage(frame, 1.0 / 255, (self.in_width, self.in_height),
-                                        (0, 0, 0), swapRB=False, crop=False)
+        # Create a copy for drawing
+        annotated_frame = frame.copy()
         
-        self.net.setInput(inp_blob)
-        output = self.net.forward()
+        # Initialize pose info
+        pose_info = {
+            "pose_type": "Unknown",
+            "confidence": 0.0,
+            "is_pointing": False,
+            "pointing_direction": None
+        }
         
-        H = output.shape[2]
-        W = output.shape[3]
-        
-        # Empty list to store the detected keypoints
-        points = []
-        
-        for i in range(len(self.BODY_PARTS)):
-            # Confidence map of corresponding body's part
-            prob_map = output[0, i, :, :]
+        if results.pose_landmarks:
+            # Draw landmarks
+            mp.solutions.drawing_utils.draw_landmarks(
+                annotated_frame,
+                results.pose_landmarks,
+                self.mp_pose.POSE_CONNECTIONS
+            )
             
-            # Find global maxima of the prob_map
-            min_val, prob, min_loc, point = cv2.minMaxLoc(prob_map)
+            # Analyze pose
+            pose_info = self._analyze_pose(results.pose_landmarks.landmark, annotated_frame)
             
-            # Scale the point to fit on the original image
-            x = (frame_width * point[0]) / W
-            y = (frame_height * point[1]) / H
-            
-            if prob > self.threshold:
-                points.append((int(x), int(y)))
-            else:
-                points.append(None)
+            # Add text with pose information
+            self._add_pose_info_text(annotated_frame, pose_info)
         
-        # Draw the detected poses
-        for pair in self.POSE_PAIRS:
-            partA = pair[0]
-            partB = pair[1]
-            
-            if points[partA] and points[partB]:
-                cv2.line(frame, points[partA], points[partB], (0, 255, 255), 2)
-                cv2.circle(frame, points[partA], 8, (0, 0, 255), thickness=-1, lineType=cv2.FILLED)
-                cv2.circle(frame, points[partB], 8, (0, 0, 255), thickness=-1, lineType=cv2.FILLED)
-        
-        # Analyze pose and add text description
-        pose_description, confidence = self._analyze_pose(points)
-        cv2.putText(frame, f"{pose_description} ({confidence:.1f}%)", 
-                   (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-        
-        return frame, points
-
-    def _analyze_pose(self, points):
+        return annotated_frame, pose_info
+    
+    def _analyze_pose(self, landmarks, frame):
         """
-        Analyze the detected pose and return a description and confidence
+        Analyze the detected pose and determine if the professor is pointing
         Args:
-            points: List of detected keypoints
+            landmarks: Detected keypoints
+            frame: Frame for visualization
         Returns:
-            tuple: (description, confidence)
+            dict: Pose information
         """
-        if not points[1] or not points[2] or not points[5]:  # Neck and shoulders
-            return "Pose not clear", 0.0
+        # Default pose info
+        pose_info = {
+            "pose_type": "Unknown",
+            "confidence": 0.0,
+            "is_pointing": False,
+            "pointing_direction": None
+        }
+        
+        # Check if we have the necessary landmarks
+        if not all(key in landmarks for key in self.BODY_PARTS.values()):
+            return pose_info
+        
+        # Calculate overall confidence (average of detected points)
+        confidence = np.mean([landmarks[key].visibility for key in self.BODY_PARTS.values()]) * 100
+        
+        # Extract key points
+        left_shoulder = landmarks[self.BODY_PARTS["LEFT_SHOULDER"]]
+        right_shoulder = landmarks[self.BODY_PARTS["RIGHT_SHOULDER"]]
+        left_elbow = landmarks[self.BODY_PARTS["LEFT_ELBOW"]]
+        right_elbow = landmarks[self.BODY_PARTS["RIGHT_ELBOW"]]
+        left_wrist = landmarks[self.BODY_PARTS["LEFT_WRIST"]]
+        right_wrist = landmarks[self.BODY_PARTS["RIGHT_WRIST"]]
+        
+        # Check for pointing with right arm
+        right_pointing = False
+        if right_shoulder.visibility > 0.7 and right_elbow.visibility > 0.7 and right_wrist.visibility > 0.7:
+            # Calculate angle
+            right_angle = self._calculate_angle(
+                [right_shoulder.x, right_shoulder.y],
+                [right_elbow.x, right_elbow.y],
+                [right_wrist.x, right_wrist.y]
+            )
             
-        # Calculate angles and positions for analysis
-        neck = points[1]
-        r_shoulder = points[2]
-        l_shoulder = points[5]
+            # Check if pointing (arm nearly straight and horizontal)
+            is_arm_extended = right_angle > 150
+            is_horizontal = abs(right_wrist.x - right_elbow.x) > abs(right_wrist.y - right_elbow.y)
+            wrist_right_of_elbow = right_wrist.x > right_elbow.x
+            
+            right_pointing = is_arm_extended and is_horizontal and wrist_right_of_elbow
         
-        # Calculate confidence based on number of detected points
-        detected_points = sum(1 for p in points if p is not None)
-        confidence = (detected_points / len(points)) * 100
+        # Check for pointing with left arm
+        left_pointing = False
+        if left_shoulder.visibility > 0.7 and left_elbow.visibility > 0.7 and left_wrist.visibility > 0.7:
+            # Calculate angle
+            left_angle = self._calculate_angle(
+                [left_shoulder.x, left_shoulder.y],
+                [left_elbow.x, left_elbow.y],
+                [left_wrist.x, left_wrist.y]
+            )
+            
+            # Check if pointing (arm nearly straight and horizontal)
+            is_arm_extended = left_angle > 150
+            is_horizontal = abs(left_wrist.x - left_elbow.x) > abs(left_wrist.y - left_elbow.y)
+            wrist_left_of_elbow = left_wrist.x < left_elbow.x
+            
+            left_pointing = is_arm_extended and is_horizontal and wrist_left_of_elbow
         
-        # Check if pointing towards board (right arm extended)
-        if points[3] and points[4]:  # Right elbow and wrist
-            arm_angle = self._calculate_angle(neck, r_shoulder, points[3])
-            if 150 < arm_angle < 180:
-                return "Pointing towards board", confidence
+        # Determine pose type
+        pose_type = "Standing"
+        is_pointing = False
+        pointing_direction = None
         
-        # Check if writing on board
-        if points[6] and points[7]:  # Left elbow and wrist
-            arm_angle = self._calculate_angle(neck, l_shoulder, points[6])
-            if 90 < arm_angle < 150:
-                return "Writing on board", confidence
+        if right_pointing:
+            pose_type = "Pointing Right"
+            is_pointing = True
+            pointing_direction = "right"
+        elif left_pointing:
+            pose_type = "Pointing Left"
+            is_pointing = True
+            pointing_direction = "left"
         
-        # Check if standing straight
-        if points[8] and points[11]:  # Hips
-            hip_angle = self._calculate_angle(neck, points[8], points[11])
-            if 170 < hip_angle < 190:
-                return "Standing straight", confidence
+        # Create pose info
+        pose_info = {
+            "pose_type": pose_type,
+            "confidence": confidence,
+            "is_pointing": is_pointing,
+            "pointing_direction": pointing_direction
+        }
         
-        # Check if walking
-        if points[9] and points[12]:  # Knees
-            knee_angle = self._calculate_angle(points[8], points[9], points[10])
-            if knee_angle < 150:
-                return "Walking", confidence
+        # Add to recent poses and smooth
+        self.recent_poses.append(pose_info)
+        if len(self.recent_poses) > self.max_recent_poses:
+            self.recent_poses.pop(0)
         
-        return "Normal standing pose", confidence
-
+        return self._smooth_pose_classification()
+    
     def _calculate_angle(self, a, b, c):
         """
-        Calculate angle between three points
-        Args:
-            a, b, c: Three points forming the angle
-        Returns:
-            float: Angle in degrees
+        Calculate angle between three points (at point b)
         """
+        # Convert to numpy arrays
         a = np.array(a)
         b = np.array(b)
         c = np.array(c)
         
-        radians = np.arctan2(c[1]-b[1], c[0]-b[0]) - np.arctan2(a[1]-b[1], a[0]-b[0])
-        angle = np.abs(radians*180.0/np.pi)
+        # Calculate vectors
+        ba = a - b
+        bc = c - b
         
-        if angle > 180.0:
-            angle = 360-angle
-            
-        return angle
+        # Calculate dot product
+        cosine_angle = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc))
+        cosine_angle = np.clip(cosine_angle, -1.0, 1.0)  # Ensure within valid range
+        
+        # Calculate angle
+        angle = np.arccos(cosine_angle)
+        
+        # Convert to degrees
+        angle_degrees = np.degrees(angle)
+        
+        return angle_degrees
+    
+    def _smooth_pose_classification(self):
+        """
+        Smooth pose classifications to avoid flickering
+        """
+        if not self.recent_poses:
+            return {
+                "pose_type": "Unknown",
+                "confidence": 0.0,
+                "is_pointing": False,
+                "pointing_direction": None
+            }
+        
+        # Count pose types
+        pose_counts = {}
+        for pose in self.recent_poses:
+            pose_type = pose["pose_type"]
+            if pose_type not in pose_counts:
+                pose_counts[pose_type] = 0
+            pose_counts[pose_type] += 1
+        
+        # Get most common pose
+        most_common_pose = max(pose_counts.items(), key=lambda x: x[1])[0]
+        
+        # Find most recent pose of this type
+        for pose in reversed(self.recent_poses):
+            if pose["pose_type"] == most_common_pose:
+                return pose
+        
+        # Fallback to most recent
+        return self.recent_poses[-1]
+    
+    def _add_pose_info_text(self, frame, pose_info):
+        """
+        Add pose information text to the frame
+        """
+        height, width, _ = frame.shape
+        
+        # Create background for text
+        cv2.rectangle(frame, (10, 10), (330, 100), (0, 0, 0), -1)
+        
+        # Add pose type and confidence
+        cv2.putText(frame, f"Pose: {pose_info['pose_type']}", 
+                   (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        cv2.putText(frame, f"Confidence: {pose_info['confidence']:.1f}%", 
+                   (20, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        
+        # Add viewing recommendation
+        recommendation = "Focus on Professor"
+        if pose_info["is_pointing"]:
+            if pose_info["pointing_direction"] == "right":
+                recommendation = "Focus on Right Whiteboard"
+            else:
+                recommendation = "Focus on Left Whiteboard"
+                
+        cv2.putText(frame, f"Recommended View: {recommendation}", 
+                   (20, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
 def process_video(video_path, output_path):
     """
-    Process a video file and detect poses
+    Process a video file for professor pose detection
     Args:
         video_path: Path to input video
         output_path: Path to save output video
     """
+    print(f"Opening video file: {video_path}")
+    
     # Initialize pose detector
-    detector = PoseDetector()
+    detector = ProfessorPoseDetector()
     
     # Open video file
     cap = cv2.VideoCapture(video_path)
+    
+    # Check if video opened successfully
+    if not cap.isOpened():
+        print(f"Error: Could not open video file {video_path}")
+        return
     
     # Get video properties
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = int(cap.get(cv2.CAP_PROP_FPS))
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    
+    print(f"Video properties - Width: {width}, Height: {height}, FPS: {fps}, Total Frames: {total_frames}")
+    
+    if width == 0 or height == 0 or fps == 0:
+        print("Error: Invalid video properties")
+        cap.release()
+        return
     
     # Initialize video writer
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
     
+    if not out.isOpened():
+        print(f"Error: Could not create output video file {output_path}")
+        cap.release()
+        return
+    
     frame_count = 0
     start_time = time.time()
     
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
-            
-        # Process frame
-        processed_frame, _ = detector.detect_pose(frame)
-        
-        # Write frame
-        out.write(processed_frame)
-        
-        frame_count += 1
-        
-        # Calculate and display FPS
-        if frame_count % 30 == 0:
-            elapsed_time = time.time() - start_time
-            fps = frame_count / elapsed_time
-            print(f"Processing frame {frame_count}, FPS: {fps:.2f}")
+    try:
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                print("End of video reached")
+                break
+                
+            try:
+                # Process frame
+                processed_frame, pose_info = detector.detect_pose(frame)
+                
+                # Write frame
+                out.write(processed_frame)
+                
+                frame_count += 1
+                
+                # Calculate and display FPS
+                if frame_count % 30 == 0:
+                    elapsed_time = time.time() - start_time
+                    processing_fps = frame_count / elapsed_time
+                    print(f"Processing frame {frame_count}/{total_frames}, FPS: {processing_fps:.2f}")
+                    
+            except Exception as e:
+                print(f"Error processing frame {frame_count}: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                continue
     
-    # Release resources
-    cap.release()
-    out.release()
-    cv2.destroyAllWindows()
+    except Exception as e:
+        print(f"Error during video processing: {str(e)}")
+        import traceback
+        traceback.print_exc()
+    
+    finally:
+        # Release resources
+        cap.release()
+        out.release()
+        detector.pose.close()
+        cv2.destroyAllWindows()
+        print(f"Processing completed. Processed {frame_count} frames.")
 
-def process_all_videos():
+def main():
     """
-    Process all videos in the data folder
+    Main function to process a specific video
     """
+    # Set paths
     data_dir = Path("../../data")
     output_dir = Path("../../output")
     output_dir.mkdir(exist_ok=True)
     
-    # Debug: Check if data directory exists
-    if not data_dir.exists():
-        print(f"Error: Data directory '{data_dir}' does not exist!")
+    # Specific video to process
+    video_file = "Lecture1-Prof.mp4"
+    video_path = data_dir / video_file
+    
+    if not video_path.exists():
+        print(f"Error: Video file {video_path} does not exist!")
         return
+        
+    # Set output path
+    output_path = output_dir / f"pose_{video_file}"
     
-    # Get all video files
-    video_extensions = ('.mp4', '.avi', '.mov')
-    video_files = [f for f in data_dir.glob('**/*') if f.suffix.lower() in video_extensions]
-    
-    # Debug: Print number of videos found
-    print(f"Found {len(video_files)} video files in {data_dir}")
-    
-    if not video_files:
-        print(f"No video files found in {data_dir}. Please place videos in the data folder.")
-        return
-    
-    for video_path in video_files:
-        print(f"\nProcessing {video_path.name}...")
-        try:
-            # Debug: Check if video file exists and is readable
-            if not video_path.exists():
-                print(f"Error: Video file {video_path} does not exist!")
-                continue
-                
-            output_path = output_dir / f"pose_{video_path.name}"
-            process_video(str(video_path), str(output_path))
-            print(f"Saved processed video to {output_path}")
-        except Exception as e:
-            print(f"Error processing {video_path.name}: {str(e)}")
+    print(f"\nProcessing {video_file}...")
+    process_video(str(video_path), str(output_path))
+    print(f"Saved processed video to {output_path}")
 
 if __name__ == "__main__":
     print("Starting pose detection...")
-    # Process all videos in the data folder
-    process_all_videos()
-    print("Pose detection completed.") 
+    main()
+    print("Pose detection completed.")
