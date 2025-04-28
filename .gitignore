@@ -180,4 +180,3 @@ cython_debug/
 data/*
 models/pose_estimation/models/pose_estimation/*
 output/*
-requirements.txt
