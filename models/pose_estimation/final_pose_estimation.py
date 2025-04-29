@@ -3,6 +3,7 @@ import numpy as np
 import mediapipe as mp
 import time
 import os
+import json
 
 def detect_gesture(frame, pose):
     """
@@ -95,14 +96,15 @@ def calculate_angle(a, b, c):
     
     return angle
 
-def process_videos(professor_video, slides_video, output_path):
+def process_videos(professor_video, slides_video, output_path, save_video=False):
     """
-    Process the professor and slides videos to create a composite output
+    Process the professor and slides videos to detect poses and gestures
     
     Args:
         professor_video: Path to professor video
         slides_video: Path to slides video
-        output_path: Path to save the output video
+        output_path: Path to save the output JSON file
+        save_video: If True, also saves a composite video showing the processing
     """
     # Initialize MediaPipe Pose outside the loop
     mp_pose = mp.solutions.pose
@@ -137,14 +139,19 @@ def process_videos(professor_video, slides_video, output_path):
     # Make sure output directory exists
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
-    # Initialize video writer
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    # Initialize video writer if needed
+    if save_video:
+        video_output_path = output_path.replace('.json', '.mp4')
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(video_output_path, fourcc, fps, (width, height))
     
     # Initialize state variables
     current_state = 'default'  # default, pointing, writing
     state_frames = 0
     state_threshold = 10  # Number of frames to maintain a state
+    
+    # Initialize results list
+    results = []
     
     # Process frames
     start_time = time.time()
@@ -158,6 +165,9 @@ def process_videos(professor_video, slides_video, output_path):
             break
         
         processed_frames += 1
+        
+        # Get timestamp
+        timestamp = processed_frames / fps
         
         # Detect gesture
         is_pointing, is_writing = detect_gesture(prof_frame, pose)
@@ -180,44 +190,56 @@ def process_videos(professor_video, slides_video, output_path):
         else:
             state_frames = 0
         
-        # Create output frame based on current state
-        if current_state == 'pointing':
-            # Show only slides
-            output_frame = slide_frame.copy()
-        elif current_state == 'writing':
-            # Show only professor
-            output_frame = cv2.resize(prof_frame, (width, height))
-        else:  # default state
-            # Show slides with professor inset
-            output_frame = slide_frame.copy()
-            
-            # Add professor inset in top-right corner
-            inset_height = int(height * 0.3)
-            inset_width = int(width * 0.3)
-            prof_resized = cv2.resize(prof_frame, (inset_width, inset_height))
-            
-            # Place inset in top-right corner
-            y_offset = 20
-            x_offset = width - inset_width - 20
-            
-            # Create ROI
-            roi = output_frame[y_offset:y_offset+inset_height, x_offset:x_offset+inset_width]
-            
-            # Create a mask for blending
-            prof_gray = cv2.cvtColor(prof_resized, cv2.COLOR_BGR2GRAY)
-            _, mask = cv2.threshold(prof_gray, 0, 255, cv2.THRESH_BINARY)
-            
-            # Place professor inset on slides
-            output_frame[y_offset:y_offset+inset_height, x_offset:x_offset+inset_width] = prof_resized
-            
-            # Add border around inset
-            cv2.rectangle(output_frame, 
-                         (x_offset, y_offset),
-                         (x_offset+inset_width, y_offset+inset_height),
-                         (255, 255, 255), 2)
+        # Save results for this frame
+        frame_result = {
+            'frame_index': processed_frames,
+            'timestamp': timestamp,
+            'is_pointing': is_pointing,
+            'is_writing': is_writing,
+            'state': current_state,
+            'confidence': 1.0  # TODO: Add actual confidence calculation
+        }
+        results.append(frame_result)
         
-        # Write the frame
-        out.write(output_frame)
+        # Create output frame if saving video
+        if save_video:
+            if current_state == 'pointing':
+                # Show only slides
+                output_frame = slide_frame.copy()
+            elif current_state == 'writing':
+                # Show only professor
+                output_frame = cv2.resize(prof_frame, (width, height))
+            else:  # default state
+                # Show slides with professor inset
+                output_frame = slide_frame.copy()
+                
+                # Add professor inset in top-right corner
+                inset_height = int(height * 0.3)
+                inset_width = int(width * 0.3)
+                prof_resized = cv2.resize(prof_frame, (inset_width, inset_height))
+                
+                # Place inset in top-right corner
+                y_offset = 20
+                x_offset = width - inset_width - 20
+                
+                # Create ROI
+                roi = output_frame[y_offset:y_offset+inset_height, x_offset:x_offset+inset_width]
+                
+                # Create a mask for blending
+                prof_gray = cv2.cvtColor(prof_resized, cv2.COLOR_BGR2GRAY)
+                _, mask = cv2.threshold(prof_gray, 0, 255, cv2.THRESH_BINARY)
+                
+                # Place professor inset on slides
+                output_frame[y_offset:y_offset+inset_height, x_offset:x_offset+inset_width] = prof_resized
+                
+                # Add border around inset
+                cv2.rectangle(output_frame, 
+                             (x_offset, y_offset),
+                             (x_offset+inset_width, y_offset+inset_height),
+                             (255, 255, 255), 2)
+            
+            # Write the frame
+            out.write(output_frame)
         
         # Print progress periodically
         if processed_frames % 30 == 0:
@@ -227,15 +249,32 @@ def process_videos(professor_video, slides_video, output_path):
             print(f"Progress: {percentage:.1f}% | {processed_frames}/{total_frames} frames | "
                   f"Elapsed: {elapsed:.1f}s | Remaining: {remaining:.1f}s | State: {current_state}")
     
+    # Save results to JSON
+    output_data = {
+        'processing_date': time.strftime('%Y-%m-%d %H:%M:%S'),
+        'video_path': professor_video,
+        'total_frames': processed_frames,
+        'fps': fps,
+        'results': results
+    }
+    
+    with open(output_path, 'w') as f:
+        json.dump(output_data, f, indent=2)
+    
     # Release resources
     print("\nProcessing completed!")
     print(f"Total frames processed: {processed_frames}")
     print(f"Total time: {time.time() - start_time:.1f} seconds")
+    print(f"Results saved to {output_path}")
+    if save_video:
+        print(f"Video saved to {video_output_path}")
+    
     prof_cap.release()
     slide_cap.release()
-    out.release()
+    if save_video:
+        out.release()
     pose.close()
 
 if __name__ == "__main__":
     # Process videos
-    process_videos("data/final-prof.mp4", "data/final-slide.mp4", "output/final_output.mp4")
+    process_videos("data/final-prof.mp4", "data/final-slide.mp4", "output/final_output.json", save_video=True)
