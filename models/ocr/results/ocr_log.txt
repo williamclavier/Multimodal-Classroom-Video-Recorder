@@ -1,36 +1,36 @@
-[Frame 4770]
+[Frame 4770] [Timestamp 0:02:39]
 Transformers — Part 2
 
 LADS ~ Spring 2025
 
-[Frame 7680]
+[Frame 7680] [Timestamp 0:04:16]
 Transformers — Part 2
 
 DDLADS= Spring 2025,
 
-[Frame 7690]
+[Frame 7690] [Timestamp 0:04:16]
 ~ ‘
 
-[Frame 7790]
+[Frame 7790] [Timestamp 0:04:19]
 Transformers — Part 2
 
 LADS Spring 2025
 
-[Frame 8270]
+[Frame 8270] [Timestamp 0:04:35]
 Spring 2025 DLADS Midterm Challenge
 
-[Frame 20310]
+[Frame 20310] [Timestamp 0:11:17]
 | Spring 2025 DLA4DS Midterm Challenge
 
-[Frame 20350]
+[Frame 20350] [Timestamp 0:11:18]
 Transformers — Part 2
 
 ‘LADS ~ Spring 2025
 
-[Frame 20450]
+[Frame 20450] [Timestamp 0:11:21]
 | Spring 2025 DL4DS Midterm Challenge
 
-[Frame 20510]
+[Frame 20510] [Timestamp 0:11:23]
 Spring 2025 DL4DS Midterm Challenge
 
 e--
@@ -38,18 +38,18 @@ e--
 Basic Details ee
 '
 
-[Frame 20520]
+[Frame 20520] [Timestamp 0:11:24]
 Spring 2025 DLADS Midterm Challenge
 
-[Frame 20970]
+[Frame 20970] [Timestamp 0:11:39]
 © Leaderboard
 
-[Frame 21020]
+[Frame 21020] [Timestamp 0:11:40]
 Transformers — Part 2
 
 LADS ~ Spring 2025
 
-[Frame 21160]
+[Frame 21160] [Timestamp 0:11:45]
 BOSTON
 UN 4
 
@@ -57,17 +57,17 @@ Transformers — Part 2
 
 DLADS - Spring 2025
 
-[Frame 21220]
+[Frame 21220] [Timestamp 0:11:47]
 Transformers — Part 2
 
 LADS — Spring 2025
 
-[Frame 21230]
+[Frame 21230] [Timestamp 0:11:47]
 Transformers — Part 2
 
 DL4DS - Spring 2025
 
-[Frame 25790]
+[Frame 25790] [Timestamp 0:14:19]
 Recap From Part 1
 
 * Motivation
@@ -84,7 +84,7 @@ Models
 * Decoder
 * Encoder-Decoder
 
-[Frame 26440]
+[Frame 26440] [Timestamp 0:14:41]
 Transformers
 
 * Motivation
@@ -95,7 +95,7 @@ Transformers
 * The Transformer Architecture
 “Th
 
-[Frame 26760]
+[Frame 26760] [Timestamp 0:14:52]
 Join at
 slido.com
 #4111039
@@ -110,7 +110,7 @@ Decoder
 
 Encoder-Decoder
 
-[Frame 37070]
+[Frame 37070] [Timestamp 0:20:35]
 3 Types of Transformer Models
 
 ~ transforms text embeddings into representations that
@@ -124,17 +124,17 @@ ChatGPT, Al assistants)
 — used in sequence-to-sequence tasks, where one
 text string is converted to another (e.g. machine translation)
 
-[Frame 37810]
+[Frame 37810] [Timestamp 0:21:00]
 Next Token Selection
 
-[Frame 37850]
+[Frame 37850] [Timestamp 0:21:01]
 Next Token Selection
 
 + Recall: output is a [V|x1 vector of probabilities
 + How should we pick the next token?
 + Trade off between accuracy and diversity
 
-[Frame 40100]
+[Frame 40100] [Timestamp 0:22:16]
 Next Token Selection Probability of
 
 target token
@@ -149,7 +149,7 @@ Selectin methods:
 
 + Beam search
 
-[Frame 40460]
+[Frame 40460] [Timestamp 0:22:28]
 Probablity of
 
 Next Token Selection — Greedy target token
@@ -166,7 +166,7 @@ is high.
 Result is generic and predictable. Same output for a given input
 context
 
-[Frame 45170]
+[Frame 45170] [Timestamp 0:25:05]
 Next Token Selection -- Sampling Probability of
 
 target token
@@ -178,7 +178,7 @@ AN
 Will occasionally sample from the long tail of the distribution,
 producing some unlikely word combinations
 
-[Frame 48460]
+[Frame 48460] [Timestamp 0:26:55]
 . Probability of
 
 Next Token Selection — Top K Sampling target token
@@ -199,7 +199,7 @@ Renormalize the probabilities to be valid probability distribution
 
 Depends on the distribution. Could be low variance, reducing diversity
 
-[Frame 51630]
+[Frame 51630] [Timestamp 0:28:41]
 - . Probabiity of
 Next Token Selection — Nucleus Sampling —_ weet toten
 =o
@@ -215,7 +215,7 @@ wevir)
 Depends on the distribution. Could be low variance,
 reducing diversity
 
-[Frame 54650]
+[Frame 54650] [Timestamp 0:30:21]
 Next Token Selection — Beam Search
 Commonly used in machine
 translation
@@ -229,13 +229,13 @@ We want to maximize p(ty, tz, t3).
 
 Greedy: 0.5x0.4x1.0 = 0.20
 
-[Frame 61180]
+[Frame 61180] [Timestamp 0:33:59]
 Next Token Selection — Beam Search
 
 But we can’t exhaustively search the entire vocabulary
 Keep k tokens (beam width) at each step
 
-[Frame 61410]
+[Frame 61410] [Timestamp 0:34:07]
 Next Token Selection — Beam Search 208: Beginning of
 
 Keep k tokens at each step
@@ -244,13 +244,13 @@ Eg.k=2
 
 Prune to k at each step
 
-[Frame 63230]
+[Frame 63230] [Timestamp 0:35:07]
 Next Token Selection — Beam Search (k=2)
 
 Calculated with fog
 probabilities and add Pick the top 2 tokens.
 
-[Frame 69770]
+[Frame 69770] [Timestamp 0:38:45]
 Next Token Selection — Beam Search
 
 We have 2 paths randomly
@@ -260,7 +260,7 @@ probabilities.
 
 Randomly pick 1.
 
-[Frame 73330]
+[Frame 73330] [Timestamp 0:40:44]
 Next Token Selection
 
 * Greedy selection
@@ -270,7 +270,7 @@ Next Token Selection
 
 + Beam search
 
-[Frame 73680]
+[Frame 73680] [Timestamp 0:40:56]
 Context Length of LLMs
 Large Language Model Context Size
 
@@ -286,7 +286,7 @@ Claude 35 200K
 Sonnet ¢ |
 Gootle Gemini Milions ee eee | |
 
-[Frame 75810]
+[Frame 75810] [Timestamp 0:42:07]
 Attention Matrix
 
 W
@@ -296,7 +296,7 @@ Reve
 Scales quadratically with
 sequence length N, e.g. Ni
 
-[Frame 82930]
+[Frame 82930] [Timestamp 0:46:04]
 Masked Attention
 
 a)
@@ -306,7 +306,7 @@ b)
 ~1/2 the interactions but
 still scales quadratically
 
-[Frame 83860]
+[Frame 83860] [Timestamp 0:46:35]
 Use Convolutional Structure in Attention
 
 a)
@@ -316,16 +316,16 @@ Wey Keys
 Encoder Decoder
 (non-causal) (causal)
 
-[Frame 87150]
+[Frame 87150] [Timestamp 0:48:25]
 Have some tokens interact g
 
 Decoder Encoder
 
-[Frame 93690]
+[Frame 93690] [Timestamp 0:52:03]
 Tokenization and Word
 Embedding
 
-[Frame 94980]
+[Frame 94980] [Timestamp 0:52:46]
 Tokenizer
 
 character (ew
@@ -342,13 +342,13 @@ training
 In tokenizer training, commonly occurring substrings are greedily merged based on
 their frequency, starting with character pairs
 
-[Frame 98440]
+[Frame 98440] [Timestamp 0:54:41]
 Tokenization Issues
 
 + Wy stim won at rans rguges (eg apanes) Toeration
 + Wy GP have more tan necessary woul ang in Phen? Theat,
 
-[Frame 101550]
+[Frame 101550] [Timestamp 0:56:25]
 Unicode Standard and UTF-8
 
 * Unicode - variable length character encoding standard. currently defines 149,813
@@ -362,7 +362,7 @@ U+0000 ~ U+1OFFFF in hexadecimal
 using one to four bytes
 + First 128 chars same as ASCIL
 
-[Frame 106510]
+[Frame 106510] [Timestamp 0:59:10]
 Tokenizer
 
 Two common tokenizers:
@@ -383,7 +383,7 @@ tokenizers.*
 sentencepiece runs BPE directly on Unicode code points instead of on UTF-8
 encoded bytes.
 
-[Frame 108370]
+[Frame 108370] [Timestamp 1:00:12]
 BPE Pseudocode
 
 Initialize vocabulary + individual characters in
@@ -396,7 +396,7 @@ tokens/characters in the vocabulary
 Merge this pair to form a new token
 Update the vocabulary with this new token
 
-[Frame 111400]
+[Frame 111400] [Timestamp 1:01:53]
 Enforce a Token Split Pattern
 
 er2_spurt_partean @stsoaty I velre) | Pp(LIs1 B41
@@ -414,12 +414,12 @@ PEAVS\pAL}WpAN}] [Arn] +] \ 82 (rin [VS C2 48) 8
 
 * carriage returns, new lines
 
-[Frame 113640]
+[Frame 113640] [Timestamp 1:03:08]
 GPT4 Tokenizer 110k, bases the GPT4 tokenizer
 
 Tiktokenizer
 
-[Frame 115820]
+[Frame 115820] [Timestamp 1:04:20]
 GPT2 Tokenizer
 
 Tiktokenizer
@@ -428,7 +428,7 @@ You can see some issues with the
 GPT2 tokenizer with respect to
 python code
 
-[Frame 117370]
+[Frame 117370] [Timestamp 1:05:12]
 GPT4 Tokenizer
 
 Tiktokenizer
@@ -436,17 +436,17 @@ Tiktokenizer
 Issues are improved with GPT4
 tokenizer
 
-[Frame 118150]
+[Frame 118150] [Timestamp 1:05:38]
 a)
 
 Sith nea Byte Pair Encoding (BPE) Example
 
-[Frame 120450]
+[Frame 120450] [Timestamp 1:06:55]
 Generally of tokens increases an
 then easing ater
 continuing to merge tokens
 
-[Frame 121640]
+[Frame 121640] [Timestamp 1:07:34]
 Learned Embeddings
 
 ‘Some txt strog> earned
@@ -462,7 +462,7 @@ transformer model
 self.embedding = on.Enbedding(vocab_size, enbedding_dim)
 Special layer definition, likely to exploit sparsity of input
 
-[Frame 126710]
+[Frame 126710] [Timestamp 1:10:23]
 Embeddings Output
 
 inthis example, we are
@@ -475,7 +475,7 @@ pial embedding ste, 0, is 1024
 Typical vocabulary sz, |, 1 30,000 Token indices, T
 0 30M parameters just fr ths matrix
 
-[Frame 128250]
+[Frame 128250] [Timestamp 1:11:15]
 Next Jupyter Notebook assignment
 
 + will release shortly
@@ -483,7 +483,7 @@ Next Jupyter Notebook assignment
 >self-attention
 > multi-head self-attention
 
-[Frame 128320]
+[Frame 128320] [Timestamp 1:11:17]
 Embeddings Output
 
 inthis example, we are
@@ -496,7 +496,7 @@ Input. X. Vocabulary embedcings, 9,
 + ypical vocabulary size, V1, s 30,000 Token indices, T
 + 50304 parameters just fortis matrial
 
-[Frame 128340]
+[Frame 128340] [Timestamp 1:11:18]
 Next Jupyter Notebook assignment
 
 + will release shortly
@@ -504,26 +504,26 @@ Next Jupyter Notebook assignment
 >self-attention
 > multi-head self-attention
 
-[Frame 131420]
+[Frame 131420] [Timestamp 1:13:00]
 Next Feedback
 
 + Image Transformers [O)
 
 + Multimodal Transformers
 
-[Frame 131730]
+[Frame 131730] [Timestamp 1:13:11]
 Next Feedback
 
 + Image Transformers
 + Multimodal Transformers
 
-[Frame 132070]
+[Frame 132070] [Timestamp 1:13:22]
 Next Feedback
 
 + Image Transformers
 + Multimodal Transformers
 
-[Frame 132110]
+[Frame 132110] [Timestamp 1:13:23]
 Next Feedback
 
 + Image Transformers
