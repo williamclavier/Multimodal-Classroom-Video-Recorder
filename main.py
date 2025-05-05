@@ -9,12 +9,6 @@ from typing import Dict, List, Optional, Tuple
 from tqdm import tqdm
 import shutil
 
-from models.ocr.run_video_ocr import run_video_ocr
-from models.transcription.whisper_inference import WhisperTranscriber
-from models.pose_estimation.final_pose_estimation import process_videos
-from models.content_analyzer import ContentAnalyzer
-from models.camera_decision_system import CameraDecisionSystem
-
 class VideoProcessor:
     def __init__(self, 
                  slide_video_path: str, 
@@ -78,6 +72,7 @@ class VideoProcessor:
     
     def process_video(self):
         """Process both videos through all components."""
+        from models.pose_estimation.final_pose_estimation import process_video
         print("Starting video processing...")
         
         # 1. Run OCR on slide video (or use saved results)
@@ -99,8 +94,7 @@ class VideoProcessor:
                 print("Using saved pose results from:", self.saved_pose_path)
                 self._copy_if_different(self.saved_pose_path, str(pose_output))
             else:
-                from models.pose_estimation.final_pose_estimation import process_videos
-                process_videos(self.professor_video_path, self.slide_video_path, str(pose_output))
+                process_video(self.professor_video_path, str(pose_output))
         
         # 3. Run transcription on professor video (or use saved results)
         if not self.load_only:
@@ -255,17 +249,78 @@ class DecisionVisualizer:
         if not pose_data or 'keypoints' not in pose_data:
             return frame
         
+        # Get current frame dimensions
+        h, w = frame.shape[:2]
+        
+        # Calculate scale factors if in debug mode
+        if self.debug_mode:
+            # Get original video dimensions
+            orig_h = int(self.professor_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            orig_w = int(self.professor_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            
+            # Calculate scale factors
+            scale_x = w / orig_w
+            scale_y = h / orig_h
+        else:
+            scale_x = scale_y = 1.0
+        
         # Draw bounding box around person
         if 'bbox' in pose_data:
-            x, y, w, h = pose_data['bbox']
-            cv2.rectangle(frame, (int(x), int(y)), (int(x + w), int(y + h)), (0, 255, 0), 2)
+            x, y, w_box, h_box = pose_data['bbox']
+            # Scale coordinates
+            x = int(x * scale_x)
+            y = int(y * scale_y)
+            w_box = int(w_box * scale_x)
+            h_box = int(h_box * scale_y)
+            cv2.rectangle(frame, (x, y), (x + w_box, y + h_box), (0, 255, 0), 2)
+        
+        # Draw keypoints and connections
+        keypoints = pose_data['keypoints']
+        
+        # Define connections between keypoints (MediaPipe Pose connections)
+        connections = [
+            ('LEFT_SHOULDER', 'RIGHT_SHOULDER'),
+            ('LEFT_SHOULDER', 'LEFT_ELBOW'),
+            ('LEFT_ELBOW', 'LEFT_WRIST'),
+            ('RIGHT_SHOULDER', 'RIGHT_ELBOW'),
+            ('RIGHT_ELBOW', 'RIGHT_WRIST'),
+            ('LEFT_SHOULDER', 'LEFT_HIP'),
+            ('RIGHT_SHOULDER', 'RIGHT_HIP'),
+            ('LEFT_HIP', 'RIGHT_HIP')
+        ]
+        
+        # Create a dictionary of keypoints for easy lookup
+        kp_dict = {kp['part']: kp for kp in keypoints if kp['score'] > 0.5}
+        
+        # Draw connections
+        for start_part, end_part in connections:
+            if start_part in kp_dict and end_part in kp_dict:
+                start_kp = kp_dict[start_part]
+                end_kp = kp_dict[end_part]
+                start_pos = start_kp['position']
+                end_pos = end_kp['position']
+                
+                # Scale coordinates
+                start_x = int(start_pos[0] * scale_x)
+                start_y = int(start_pos[1] * scale_y)
+                end_x = int(end_pos[0] * scale_x)
+                end_y = int(end_pos[1] * scale_y)
+                
+                # Draw line between keypoints
+                cv2.line(frame, 
+                        (start_x, start_y),
+                        (end_x, end_y),
+                        (0, 255, 0), 2)
         
         # Draw keypoints
-        for kp in pose_data['keypoints']:
+        for kp in keypoints:
             if kp['score'] > 0.5:  # Only draw high confidence keypoints
                 x, y = kp['position']
-                cv2.circle(frame, (int(x), int(y)), 5, (0, 0, 255), -1)
-                cv2.putText(frame, kp['part'], (int(x), int(y) - 10),
+                # Scale coordinates
+                x = int(x * scale_x)
+                y = int(y * scale_y)
+                cv2.circle(frame, (x, y), 5, (0, 0, 255), -1)
+                cv2.putText(frame, kp['part'], (x, y - 10),
                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
         
         return frame
@@ -406,17 +461,34 @@ class DecisionVisualizer:
             slide_frame = self._enhance_frame_quality(slide_frame, self.width, self.height)
         
         if decision['primary_feed'] == 'slide':
-            if decision['overlay_enabled'] and decision['slide_position'] == 'corner':
-                # Resize professor frame to 1/4 size and place in bottom-right corner
-                h, w = slide_frame.shape[:2]
-                prof_small = cv2.resize(professor_frame, (w//4, h//4), interpolation=cv2.INTER_CUBIC)
+            if decision['overlay_enabled']:
+                # Get zoomed region of professor frame if pose data is available
+                if 'pose_data' in decision and decision['pose_data']:
+                    prof_small = self._get_zoomed_region(professor_frame, decision['pose_data'])
+                else:
+                    # If no pose data, just resize the professor frame
+                    h, w = slide_frame.shape[:2]
+                    prof_small = cv2.resize(professor_frame, (w//4, h//4), interpolation=cv2.INTER_CUBIC)
                 
                 # Create a copy of the slide frame to avoid modifying the original
                 result = slide_frame.copy()
                 
-                # Calculate the position for the overlay
-                y_start = h - prof_small.shape[0]
-                x_start = w - prof_small.shape[1]
+                # Determine corner position
+                h, w = slide_frame.shape[:2]
+                corner_size = min(h, w) // 4
+                
+                if decision['slide_position'] == 'bottom_right':
+                    y_start = h - prof_small.shape[0]
+                    x_start = w - prof_small.shape[1]
+                elif decision['slide_position'] == 'bottom_left':
+                    y_start = h - prof_small.shape[0]
+                    x_start = 0
+                elif decision['slide_position'] == 'top_right':
+                    y_start = 0
+                    x_start = w - prof_small.shape[1]
+                else:  # top_left
+                    y_start = 0
+                    x_start = 0
                 
                 # Ensure the overlay is within bounds
                 y_start = max(0, y_start)
@@ -437,16 +509,26 @@ class DecisionVisualizer:
                 professor_frame = self._draw_pose_boxes(professor_frame, decision['pose_data'])
             return slide_frame
         else:  # professor is primary
-            if decision['overlay_enabled'] and decision['slide_position'] == 'corner':
+            if decision['overlay_enabled']:
                 h, w = professor_frame.shape[:2]
                 slide_small = cv2.resize(slide_frame, (w//4, h//4), interpolation=cv2.INTER_CUBIC)
                 
                 # Create a copy of the professor frame to avoid modifying the original
                 result = professor_frame.copy()
                 
-                # Calculate the position for the overlay
-                y_start = h - slide_small.shape[0]
-                x_start = w - slide_small.shape[1]
+                # Determine corner position
+                if decision['slide_position'] == 'bottom_right':
+                    y_start = h - slide_small.shape[0]
+                    x_start = w - slide_small.shape[1]
+                elif decision['slide_position'] == 'bottom_left':
+                    y_start = h - slide_small.shape[0]
+                    x_start = 0
+                elif decision['slide_position'] == 'top_right':
+                    y_start = 0
+                    x_start = w - slide_small.shape[1]
+                else:  # top_left
+                    y_start = 0
+                    x_start = 0
                 
                 # Ensure the overlay is within bounds
                 y_start = max(0, y_start)
@@ -626,62 +708,77 @@ class DecisionVisualizer:
 
 def run_pose_estimation(video_path: str, output_path: str):
     """Run pose estimation on a video and save results to JSON file."""
-    from models.pose_estimation.final_pose_estimation import process_videos
+    from models.pose_estimation.final_pose_estimation import process_video
     
     print(f"Running pose estimation on {video_path}...")
-    process_videos(video_path, None, output_path)
+    process_video(video_path, output_path)
     print(f"Pose estimation results saved to {output_path}")
 
 def main():
-    parser = argparse.ArgumentParser(description='Process classroom videos and make camera decisions.')
-    parser.add_argument('slide_video_path', help='Path to the slide video file')
-    parser.add_argument('professor_video_path', help='Path to the professor video file')
-    parser.add_argument('--output-dir', default='output', help='Directory to save outputs')
-    parser.add_argument('--skip-video', action='store_true', help='Skip video creation')
-    parser.add_argument('--load-only', action='store_true', help='Only load existing JSON files and create video')
-    parser.add_argument('--debug', action='store_true', help='Create debug visualization with overlays')
-    parser.add_argument('--quality', choices=['ultra', 'high', 'medium', 'low', 'debug'], 
-                       default='high', help='Video quality setting (ignored in debug mode)')
-    parser.add_argument('--ocr-results', help='Path to saved OCR results JSON file')
-    parser.add_argument('--pose-results', help='Path to saved pose detection results JSON file')
-    parser.add_argument('--transcription', help='Path to saved transcription JSON file')
-    parser.add_argument('--analysis', help='Path to saved content analysis JSON file')
-    parser.add_argument('--pose-only', action='store_true', 
-                       help='Only run pose estimation on professor video and exit')
-    
+    parser = argparse.ArgumentParser(description='Process lecture videos and generate combined output')
+    parser.add_argument('slide_video', help='Path to slide video')
+    parser.add_argument('professor_video', help='Path to professor video')
+    parser.add_argument('--output-dir', default='output', help='Directory to save outputs (default: output)')
+    parser.add_argument('--ocr-results', help='Path to pre-computed OCR results')
+    parser.add_argument('--pose-results', help='Path to pre-computed pose results')
+    parser.add_argument('--transcription', help='Path to pre-computed transcription')
+    parser.add_argument('--analysis', help='Path to pre-computed content analysis')
+    parser.add_argument('--load-only', action='store_true', help='Only load pre-computed results')
+    parser.add_argument('--skip-video', action='store_true', help='Skip video creation after processing')
+    parser.add_argument('--pose-only', action='store_true', help='Only run pose estimation and exit')
+    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    parser.add_argument('--quality', choices=['high', 'medium', 'low'], default='high',
+                      help='Output video quality')
+    parser.add_argument('--report', action='store_true', help='Generate confidence analysis report')
     args = parser.parse_args()
-    
+
+    # Create output directory
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Output will be saved to: {output_dir.absolute()}")
+
     # If pose-only mode, just run pose estimation and exit
     if args.pose_only:
-        output_path = Path(args.output_dir) / "pose" / "pose_results.json"
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        run_pose_estimation(args.professor_video_path, str(output_path))
+        print("Running pose estimation only...")
+        pose_output = output_dir / "pose" / "pose_results.json"
+        pose_output.parent.mkdir(parents=True, exist_ok=True)
+        run_pose_estimation(args.professor_video, str(pose_output))
         return
-    
+
     # Process videos
     processor = VideoProcessor(
-        args.slide_video_path,
-        args.professor_video_path,
-        args.output_dir,
+        slide_video_path=args.slide_video,
+        professor_video_path=args.professor_video,
+        output_dir=args.output_dir,
         ocr_results_path=args.ocr_results,
         pose_results_path=args.pose_results,
         transcription_path=args.transcription,
         analysis_path=args.analysis,
         load_only=args.load_only
     )
+
     decisions_path = processor.process_video()
-    
+
+    # Generate confidence analysis report if requested
+    if args.report:
+        print("\nGenerating confidence analysis report...")
+        from evaluation.confidence_analysis import plot_multi_model_analysis
+        plot_multi_model_analysis(output_dir)
+        print("✅ Confidence analysis report generated")
+
     # Create visualization unless explicitly skipped
     if not args.skip_video:
         visualizer = DecisionVisualizer(
-            args.slide_video_path, 
-            args.professor_video_path,
-            str(decisions_path), 
-            str(processor.visualization_dir),
+            slide_video_path=args.slide_video,
+            professor_video_path=args.professor_video,
+            decisions_path=str(decisions_path),
+            output_dir=args.output_dir,
             debug_mode=args.debug,
             quality=args.quality
         )
         visualizer.create_visualization()
+    else:
+        print("Skipping video creation as requested")
 
 if __name__ == "__main__":
     main()

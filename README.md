@@ -10,10 +10,12 @@ provide a richer, more immersive experience for both live and recorded viewers.
 ## Features
 - Automatic switching between slide and professor views based on content analysis
 - Corner overlay mode to show both feeds simultaneously
-- Pose estimation for gesture detection
-- Debug mode for faster processing and visualization
+- Pose estimation for gesture detection (pointing and writing)
+- Real-time pose visualization with skeleton tracking
+- Debug mode with comprehensive visualization overlays
 - Standalone pose estimation for fine-tuning
 - High-quality video output with configurable settings
+- Confidence analysis reports for model performance evaluation
 
 ## Installation
 
@@ -74,41 +76,66 @@ python -m pip install -r requirements.txt
 
 ### Basic Usage
 ```bash
-python main.py professor_video.mp4 slide_video.mp4 --output-dir output
+python main.py slide_video.mp4 professor_video.mp4 --output-dir output
 ```
 
 ### Advanced Options
+- `--output-dir`: Directory to save outputs (required)
+- `--ocr-results`: Path to pre-computed OCR results
+- `--pose-results`: Path to pre-computed pose results
+- `--transcription`: Path to pre-computed transcription
+- `--analysis`: Path to pre-computed content analysis
+- `--load-only`: Only load pre-computed results (skip processing)
+- `--skip-video`: Skip video creation after processing
+- `--pose-only`: Only run pose estimation and exit
 - `--debug`: Enable debug mode (faster processing, lower resolution, visual overlays)
-- `--quality`: Set output quality ('ultra', 'high', 'medium', 'low', 'debug')
-- `--pose-only`: Run only pose estimation on the professor video
-- `--skip-video`: Skip video creation (useful for testing analysis)
-- `--load-only`: Use existing JSON files instead of running analysis
+- `--quality`: Set output quality ('high', 'medium', 'low')
+- `--report`: Generate confidence analysis report
 
 ### Examples
 
 #### Debug Mode
 ```bash
-python main.py professor_video.mp4 slide_video.mp4 --debug
+python main.py slide_video.mp4 professor_video.mp4 --debug
 ```
-This will create a lower resolution video with debug overlays showing the decision-making process.
+This will create a lower resolution video with comprehensive debug overlays showing:
+- Pose skeleton visualization with keypoints
+- Bounding box around the professor
+- Gesture detection status (pointing/writing)
+- Confidence scores
+- Motion tracking information
+- Decision-making process
 
 #### Pose Estimation Only
 ```bash
-python main.py professor_video.mp4 slide_video.mp4 --pose-only
+python main.py slide_video.mp4 professor_video.mp4 --pose-only
 ```
 This will run only the pose estimation and save the results to a JSON file for analysis.
 
 #### High Quality Output
 ```bash
-python main.py professor_video.mp4 slide_video.mp4 --quality ultra
+python main.py slide_video.mp4 professor_video.mp4 --quality high
 ```
 This will create a high-quality output video with the best possible settings.
+
+#### Generate Confidence Report
+```bash
+python main.py slide_video.mp4 professor_video.mp4 --report
+```
+This will generate a confidence analysis report showing the performance of each model over time.
+
+#### Use Pre-computed Results
+```bash
+python main.py slide_video.mp4 professor_video.mp4 --load-only --ocr-results ocr.json --pose-results pose.json --transcription trans.json --analysis analysis.json
+```
+This will use existing analysis results instead of running the full pipeline.
 
 ## Output
 The program creates several output files in the specified output directory:
 - `output.mp4` (or `debug_output.mp4` in debug mode): The final combined video
-- `pose/pose_results.json`: Pose estimation data
+- `pose/pose_results.json`: Pose estimation data including keypoints and gesture detection
 - `ocr/ocr_results.json`: OCR results from slides
 - `transcription/transcription.json`: Speech transcription
 - `analysis/analysis_results.json`: Content analysis results
-- `decisions/decisions.json`: Camera switching decisions
+- `decisions/decisions.json`: Camera switching decisions with pose data
+- `multi_model_analysis.png`: Confidence analysis report (when using --report)
