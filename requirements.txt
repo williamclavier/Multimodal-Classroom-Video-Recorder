@@ -1,0 +1,8 @@
+pytesseract
+scikit-learn
+scikit-image
+openai-whisper
+tqdm
+mediapipe
+opencv-python
+transformers

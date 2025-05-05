@@ -7,6 +7,7 @@ from pathlib import Path
 import logging
 from transformers import pipeline
 import numpy as np
+from datetime import datetime
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -21,6 +22,18 @@ class VisualReference:
     confidence: float
     reference_type: str  # "slide", "board", "general"
     specific_content: Optional[str] = None  # e.g., "equation", "diagram", "bullet point"
+    
+    def to_dict(self) -> Dict:
+        """Convert VisualReference to dictionary for JSON serialization."""
+        return {
+            "start_time": self.start_time,
+            "end_time": self.end_time,
+            "phrase": self.phrase,
+            "text_context": self.text_context,
+            "confidence": self.confidence,
+            "reference_type": self.reference_type,
+            "specific_content": self.specific_content
+        }
 
 class WhisperTranscriber:
     def __init__(self, model="base") -> None:
@@ -194,10 +207,40 @@ class WhisperTranscriber:
                         specific_content=specific_content
                     ))
 
-    def get_visual_context(self, audio_path: str) -> Tuple[Dict, Dict[str, List[VisualReference]]]:
+    def get_visual_context(self, video_path: str) -> Dict:
         """
-        Transcribes audio and analyzes it for visual references.
+        Transcribe video and analyze for visual references.
+        
+        Args:
+            video_path: Path to the video file
+            
+        Returns:
+            Dictionary containing transcription and visual references
         """
-        transcription = self.transcribe(audio_path)
-        references = self.analyze_visual_references(transcription)
-        return transcription, references
+        # Transcribe video
+        result = self.model.transcribe(video_path)
+        
+        # Initialize references dictionary
+        references = {
+            "slides": [],
+            "boards": [],
+            "general": []
+        }
+        
+        # Process explicit phrases
+        self._process_explicit_phrases(result["text"], result["segments"], references)
+        
+        # Convert VisualReference objects to dictionaries
+        for ref_type in references:
+            references[ref_type] = [ref.to_dict() for ref in references[ref_type]]
+        
+        # Combine all results
+        output = {
+            "video_path": video_path,
+            "processing_date": datetime.now().isoformat(),
+            "transcription": result["text"],
+            "segments": result["segments"],
+            "visual_references": references
+        }
+        
+        return output
