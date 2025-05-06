@@ -271,14 +271,18 @@ class DecisionVisualizer:
             scale_x = scale_y = 1.0
         
         # Draw bounding box around person
-        if 'bbox' in pose_data:
-            x, y, w_box, h_box = pose_data['bbox']
-            # Scale coordinates
-            x = int(x * scale_x)
-            y = int(y * scale_y)
-            w_box = int(w_box * scale_x)
-            h_box = int(h_box * scale_y)
-            cv2.rectangle(frame, (x, y), (x + w_box, y + h_box), (0, 255, 0), 2)
+        if 'bbox' in pose_data and pose_data['bbox'] is not None:
+            try:
+                x, y, w_box, h_box = pose_data['bbox']
+                # Scale coordinates
+                x = int(x * scale_x)
+                y = int(y * scale_y)
+                w_box = int(w_box * scale_x)
+                h_box = int(h_box * scale_y)
+                cv2.rectangle(frame, (x, y), (x + w_box, y + h_box), (0, 255, 0), 2)
+            except (TypeError, ValueError):
+                # Skip drawing bbox if there's an error
+                pass
         
         # Draw keypoints and connections
         keypoints = pose_data['keypoints']
