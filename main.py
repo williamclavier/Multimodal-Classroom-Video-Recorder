@@ -18,12 +18,14 @@ class VideoProcessor:
                  pose_results_path: Optional[str] = None,
                  transcription_path: Optional[str] = None,
                  analysis_path: Optional[str] = None,
-                 load_only: bool = False):
+                 load_only: bool = False,
+                 pose_method: str = 'mediapipe'):
         self.slide_video_path = slide_video_path
         self.professor_video_path = professor_video_path
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)  # Ensure main output directory exists
         self.load_only = load_only
+        self.pose_method = pose_method
         
         # Store paths to saved results
         self.saved_ocr_path = ocr_results_path
@@ -73,7 +75,6 @@ class VideoProcessor:
     
     def process_video(self):
         """Process both videos through all components."""
-        from models.pose_estimation.pose_detector import process_video
         print("Starting video processing...")
         
         # Ensure all output directories exist
@@ -94,13 +95,13 @@ class VideoProcessor:
         
         # 2. Run pose detection on professor video (or use saved results)
         if not self.load_only:
-            print("\n2. Running pose detection on professor video...")
+            print(f"\n2. Running pose detection on professor video using {self.pose_method}...")
             pose_output = self.pose_dir / "pose_results.json"
             if self.saved_pose_path:
                 print("Using saved pose results from:", self.saved_pose_path)
                 self._copy_if_different(self.saved_pose_path, str(pose_output))
             else:
-                process_video(self.professor_video_path, str(pose_output))
+                run_pose_estimation(self.professor_video_path, str(pose_output), method=self.pose_method)
         
         # 3. Run transcription on professor video (or use saved results)
         if not self.load_only:
@@ -726,11 +727,17 @@ class DecisionVisualizer:
                     pass
             raise
 
-def run_pose_estimation(video_path: str, output_path: str):
+def run_pose_estimation(video_path: str, output_path: str, method: str = 'mediapipe'):
     """Run pose estimation on a video and save results to JSON file."""
-    from models.pose_estimation.pose_detector import process_video
+    print(f"Running pose estimation using {method} on {video_path}...")
     
-    print(f"Running pose estimation on {video_path}...")
+    if method == 'mediapipe':
+        from models.pose_estimation.media_pipe import process_video
+    elif method == 'openpose':
+        from models.pose_estimation.open_pose import process_video
+    else:
+        raise ValueError(f"Unknown pose estimation method: {method}. Must be 'mediapipe' or 'openpose'")
+    
     process_video(video_path, output_path)
     print(f"Pose estimation results saved to {output_path}")
 
@@ -750,6 +757,8 @@ def main():
     parser.add_argument('--quality', choices=['high', 'medium', 'low'], default='high',
                       help='Output video quality')
     parser.add_argument('--report', action='store_true', help='Generate confidence analysis report')
+    parser.add_argument('--pose-method', choices=['mediapipe', 'openpose'], default='mediapipe',
+                      help='Pose estimation method to use (default: mediapipe)')
     args = parser.parse_args()
 
     # Create output directory
@@ -762,7 +771,7 @@ def main():
         print("Running pose estimation only...")
         pose_output = output_dir / "pose" / "pose_results.json"
         pose_output.parent.mkdir(parents=True, exist_ok=True)
-        run_pose_estimation(args.professor_video, str(pose_output))
+        run_pose_estimation(args.professor_video, str(pose_output), method=args.pose_method)
         return
 
     # Process videos
@@ -774,7 +783,8 @@ def main():
         pose_results_path=args.pose_results,
         transcription_path=args.transcription,
         analysis_path=args.analysis,
-        load_only=args.load_only
+        load_only=args.load_only,
+        pose_method=args.pose_method
     )
 
     decisions_path = processor.process_video()

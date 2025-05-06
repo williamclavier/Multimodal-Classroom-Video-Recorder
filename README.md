@@ -91,6 +91,7 @@ python main.py slide_video.mp4 professor_video.mp4 --output-dir output
 - `--debug`: Enable debug mode (faster processing, lower resolution, visual overlays)
 - `--quality`: Set output quality ('high', 'medium', 'low')
 - `--report`: Generate confidence analysis report
+- `--pose-method`: Choose pose estimation method ('mediapipe' or 'openpose', default: 'mediapipe')
 
 ### Examples
 
@@ -108,7 +109,11 @@ This will create a lower resolution video with comprehensive debug overlays show
 
 #### Pose Estimation Only
 ```bash
-python main.py slide_video.mp4 professor_video.mp4 --pose-only
+# Using MediaPipe (faster)
+python main.py slide_video.mp4 professor_video.mp4 --pose-only --pose-method mediapipe
+
+# Using OpenPose (slower but potentially more accurate)
+python main.py slide_video.mp4 professor_video.mp4 --pose-only --pose-method openpose
 ```
 This will run only the pose estimation and save the results to a JSON file for analysis.
 
@@ -129,6 +134,16 @@ This will generate a confidence analysis report showing the performance of each 
 python main.py slide_video.mp4 professor_video.mp4 --load-only --ocr-results ocr.json --pose-results pose.json --transcription trans.json --analysis analysis.json
 ```
 This will use existing analysis results instead of running the full pipeline.
+
+#### Using Different Pose Estimation Methods
+```bash
+# Using MediaPipe (faster, default)
+python main.py slide_video.mp4 professor_video.mp4 --pose-method mediapipe
+
+# Using OpenPose (slower but potentially more accurate)
+python main.py slide_video.mp4 professor_video.mp4 --pose-method openpose
+```
+Choose between MediaPipe (faster) and OpenPose (slower but potentially more accurate) for pose estimation.
 
 ## Output
 The program creates several output files in the specified output directory:

@@ -399,6 +399,11 @@ def process_video(video_path: str, output_path: str, visualize: bool = False, fr
         visualize: Whether to show visualization during processing
         frame_skip: Number of frames to skip between processing (1 = no skip, 2 = process every other frame, etc.)
     """
+    # Warn about frame skipping
+    if frame_skip > 1:
+        print(f"Warning: Frame skipping (frame_skip={frame_skip}) may reduce writing detection accuracy.")
+        print("Consider using frame_skip=1 for more accurate writing detection.")
+    
     print(f"Opening video file: {video_path}")
     
     # Initialize pose detector
