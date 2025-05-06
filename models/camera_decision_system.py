@@ -159,7 +159,9 @@ class CameraDecisionSystem:
             elif pose_analysis['is_pointing'] and pose_analysis['confidence'] > MIN_GESTURE_CONFIDENCE:
                 # If pointing and content is relevant, prefer slides with professor overlay
                 if show_slides:
-                    overlay_confidence += pose_analysis['confidence'] * GESTURE_WEIGHT
+                    # Increase overlay confidence when pointing at relevant content
+                    overlay_confidence = max(overlay_confidence, 
+                                          pose_analysis['confidence'] * GESTURE_WEIGHT * 1.5)  # Boost when pointing at relevant content
                 else:
                     # If pointing but no relevant content, show professor
                     show_slides = False
@@ -168,7 +170,9 @@ class CameraDecisionSystem:
         # 3. Primary feed consideration
         # If showing slides as primary, be more conservative with overlay
         if show_slides:
-            overlay_confidence *= PRIMARY_SLIDE_PENALTY
+            # Only apply penalty if we're not pointing at relevant content
+            if not (pose_analysis and pose_analysis['is_pointing'] and pose_analysis['confidence'] > MIN_GESTURE_CONFIDENCE):
+                overlay_confidence *= PRIMARY_SLIDE_PENALTY
         
         # Determine if overlay should be enabled
         overlay_enabled = overlay_confidence >= OVERLAY_THRESHOLD
@@ -202,7 +206,7 @@ class CameraDecisionSystem:
                 reasoning_parts.append("Writing detected - showing professor")
             elif pose_analysis['is_pointing']:
                 if show_slides:
-                    reasoning_parts.append("Pointing with relevant content - showing slides with overlay")
+                    reasoning_parts.append(f"Pointing at relevant content - showing slides with overlay (confidence: {overlay_confidence:.2f})")
                 else:
                     reasoning_parts.append("Pointing without relevant content - showing professor")
             reasoning_parts.append(f"Pose confidence: {pose_analysis['confidence']:.2f}")

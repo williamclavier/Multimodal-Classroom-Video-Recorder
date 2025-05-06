@@ -224,22 +224,35 @@ class DecisionVisualizer:
         if not pose_data or 'keypoints' not in pose_data:
             return frame
         
-        # Get hand keypoints
+        # Get relevant keypoints for upper body
         keypoints = pose_data['keypoints']
-        right_hand = next((kp for kp in keypoints if kp['part'] == 'rightWrist'), None)
-        left_hand = next((kp for kp in keypoints if kp['part'] == 'leftWrist'), None)
+        kp_dict = {kp['part']: kp for kp in keypoints if kp['score'] > 0.5}
         
-        # If pointing, use the pointing hand
-        if right_hand and right_hand['score'] > 0.5:
-            center_x, center_y = right_hand['position']
-        elif left_hand and left_hand['score'] > 0.5:
-            center_x, center_y = left_hand['position']
-        else:
+        # Get keypoints for upper body
+        relevant_parts = ['LEFT_SHOULDER', 'RIGHT_SHOULDER', 'LEFT_ELBOW', 'RIGHT_ELBOW', 
+                         'LEFT_WRIST', 'RIGHT_WRIST']
+        
+        # Find the center point using available keypoints
+        valid_points = []
+        for part in relevant_parts:
+            if part in kp_dict:
+                valid_points.append(kp_dict[part]['position'])
+        
+        if not valid_points:
             return frame
+            
+        # Calculate center point from all valid keypoints
+        center_x = sum(x for x, _ in valid_points) / len(valid_points)
+        center_y = sum(y for _, y in valid_points) / len(valid_points)
         
-        # Calculate zoom region (1/4 of the frame size)
+        # Calculate zoom region (1/3 of the frame size)
         h, w = frame.shape[:2]
-        zoom_size = min(h, w) // 4
+        zoom_size = min(h, w) // 3  # Back to 1/3 for corner overlay
+        
+        # Adjust center point to include more context (move up to include head)
+        center_y = center_y - h * 0.15  # Move up to include head
+        
+        # Calculate zoom region bounds
         x1 = max(0, int(center_x - zoom_size//2))
         y1 = max(0, int(center_y - zoom_size//2))
         x2 = min(w, x1 + zoom_size)
@@ -248,6 +261,7 @@ class DecisionVisualizer:
         # Extract and resize the region
         zoomed = frame[y1:y2, x1:x2]
         if zoomed.size > 0:
+            # Resize to 1/4 of the frame size for corner overlay
             return cv2.resize(zoomed, (w//4, h//4), interpolation=cv2.INTER_CUBIC)
         return frame
     
