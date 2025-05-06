@@ -22,7 +22,7 @@ class VideoProcessor:
         self.slide_video_path = slide_video_path
         self.professor_video_path = professor_video_path
         self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir.mkdir(parents=True, exist_ok=True)  # Ensure main output directory exists
         self.load_only = load_only
         
         # Store paths to saved results
@@ -52,9 +52,10 @@ class VideoProcessor:
         self.decisions_dir = self.output_dir / "decisions"
         self.visualization_dir = self.output_dir / "visualization"
         
+        # Create all subdirectories
         for dir_path in [self.ocr_dir, self.pose_dir, self.transcription_dir, 
                         self.analysis_dir, self.decisions_dir, self.visualization_dir]:
-            dir_path.mkdir(exist_ok=True)
+            dir_path.mkdir(parents=True, exist_ok=True)
     
     def _normalize_path(self, path: str) -> str:
         """Normalize a path by converting it to absolute path and using forward slashes."""
@@ -72,8 +73,13 @@ class VideoProcessor:
     
     def process_video(self):
         """Process both videos through all components."""
-        from models.pose_estimation.final_pose_estimation import process_video
+        from models.pose_estimation.pose_detector import process_video
         print("Starting video processing...")
+        
+        # Ensure all output directories exist
+        for dir_path in [self.ocr_dir, self.pose_dir, self.transcription_dir, 
+                        self.analysis_dir, self.decisions_dir, self.visualization_dir]:
+            dir_path.mkdir(parents=True, exist_ok=True)
         
         # 1. Run OCR on slide video (or use saved results)
         if not self.load_only:
@@ -603,29 +609,35 @@ class DecisionVisualizer:
             # Close FFmpeg process
             if self.ffmpeg_process is not None:
                 print("Closing FFmpeg process...")
-                self.ffmpeg_process.stdin.close()
-                
-                # Wait for FFmpeg to finish with timeout
-                import time
-                timeout = 30  # 30 seconds timeout
-                start_time = time.time()
-                
-                while self.ffmpeg_process.poll() is None:
-                    if time.time() - start_time > timeout:
-                        print("FFmpeg process timeout - terminating")
-                        self.ffmpeg_process.terminate()
-                        break
-                    time.sleep(0.1)
-                
-                # Read any remaining output
-                _, stderr = self.ffmpeg_process.communicate()
-                if stderr:
-                    try:
-                        print("FFmpeg stderr:", stderr.decode('utf-8', errors='ignore'))
-                    except UnicodeDecodeError:
-                        print("FFmpeg stderr: [binary data]")
-                
-                print(f"FFmpeg process completed with return code: {self.ffmpeg_process.returncode}")
+                try:
+                    # Close stdin first
+                    if self.ffmpeg_process.stdin:
+                        self.ffmpeg_process.stdin.close()
+                    
+                    # Wait for FFmpeg to finish with timeout
+                    import time
+                    timeout = 30  # 30 seconds timeout
+                    start_time = time.time()
+                    
+                    while self.ffmpeg_process.poll() is None:
+                        if time.time() - start_time > timeout:
+                            print("FFmpeg process timeout - terminating")
+                            self.ffmpeg_process.terminate()
+                            break
+                        time.sleep(0.1)
+                    
+                    # Read any remaining output
+                    if self.ffmpeg_process.stderr:
+                        stderr = self.ffmpeg_process.stderr.read()
+                        if stderr:
+                            try:
+                                print("FFmpeg stderr:", stderr.decode('utf-8', errors='ignore'))
+                            except UnicodeDecodeError:
+                                print("FFmpeg stderr: [binary data]")
+                    
+                    print(f"FFmpeg process completed with return code: {self.ffmpeg_process.returncode}")
+                except Exception as e:
+                    print(f"Error closing FFmpeg process: {e}")
             
             # Verify the temporary video file exists and has content
             if not self.temp_output_path.exists():
@@ -702,13 +714,17 @@ class DecisionVisualizer:
             self.slide_cap.release()
             self.professor_cap.release()
             if self.ffmpeg_process is not None:
-                self.ffmpeg_process.stdin.close()
-                self.ffmpeg_process.terminate()
+                try:
+                    if self.ffmpeg_process.stdin:
+                        self.ffmpeg_process.stdin.close()
+                    self.ffmpeg_process.terminate()
+                except:
+                    pass
             raise
 
 def run_pose_estimation(video_path: str, output_path: str):
     """Run pose estimation on a video and save results to JSON file."""
-    from models.pose_estimation.final_pose_estimation import process_video
+    from models.pose_estimation.pose_detector import process_video
     
     print(f"Running pose estimation on {video_path}...")
     process_video(video_path, output_path)

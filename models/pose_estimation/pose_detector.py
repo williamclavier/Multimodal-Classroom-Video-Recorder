@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 import math
 import os
+import json
 
 class ProfessorPoseDetector:
     def __init__(self):
@@ -389,12 +390,14 @@ class ProfessorPoseDetector:
         cv2.putText(frame, f"Recommended View: {recommendation}", 
                    (20, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-def process_video(video_path, output_path):
+def process_video(video_path: str, output_path: str, visualize: bool = False, frame_skip: int = 5) -> None:
     """
     Process a video file for professor pose detection
     Args:
         video_path: Path to input video
-        output_path: Path to save output video
+        output_path: Path to save output JSON
+        visualize: Whether to show visualization during processing
+        frame_skip: Number of frames to skip between processing (1 = no skip, 2 = process every other frame, etc.)
     """
     print(f"Opening video file: {video_path}")
     
@@ -416,23 +419,20 @@ def process_video(video_path, output_path):
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     
     print(f"Video properties - Width: {width}, Height: {height}, FPS: {fps}, Total Frames: {total_frames}")
+    print(f"Processing every {frame_skip} frames (estimated {total_frames//frame_skip} frames to process)")
     
     if width == 0 or height == 0 or fps == 0:
         print("Error: Invalid video properties")
         cap.release()
         return
-    
-    # Initialize video writer
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-    
-    if not out.isOpened():
-        print(f"Error: Could not create output video file {output_path}")
-        cap.release()
-        return
+
+    # Initialize results list
+    results = []
     
     frame_count = 0
+    processed_frames = 0
     start_time = time.time()
+    last_progress_time = start_time
     
     try:
         while cap.isOpened():
@@ -440,21 +440,57 @@ def process_video(video_path, output_path):
             if not ret:
                 print("End of video reached")
                 break
+            
+            frame_count += 1
+            
+            # Skip frames based on frame_skip parameter
+            if frame_count % frame_skip != 0:
+                # Skip reading frames we don't need
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_count + frame_skip - 1)
+                continue
                 
+            processed_frames += 1
+            
             try:
                 # Process frame
                 processed_frame, pose_info = detector.detect_pose(frame)
                 
-                # Write frame
-                out.write(processed_frame)
+                # Get timestamp
+                timestamp = frame_count / fps
                 
-                frame_count += 1
+                # Create frame result
+                frame_result = {
+                    'frame_index': frame_count,
+                    'timestamp': timestamp,
+                    'is_pointing': pose_info['is_pointing'],
+                    'is_writing': False,  # OpenPose doesn't detect writing, so always False
+                    'confidence': pose_info['confidence'],
+                    'debug_info': {
+                        'pose_type': pose_info['pose_type'],
+                        'pointing_direction': pose_info['pointing_direction'],
+                        'keypoints': [],  # Will be populated if needed
+                        'bbox': None  # Will be populated if needed
+                    }
+                }
+                results.append(frame_result)
                 
-                # Calculate and display FPS
-                if frame_count % 30 == 0:
-                    elapsed_time = time.time() - start_time
-                    processing_fps = frame_count / elapsed_time
-                    print(f"Processing frame {frame_count}/{total_frames}, FPS: {processing_fps:.2f}")
+                # Show visualization if enabled
+                if visualize:
+                    cv2.imshow('Pose Detection', processed_frame)
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        break
+                
+                # Print progress periodically (every 2 seconds)
+                current_time = time.time()
+                if current_time - last_progress_time >= 2.0:
+                    elapsed = current_time - start_time
+                    percentage = processed_frames / (total_frames / frame_skip) * 100
+                    remaining = (elapsed / processed_frames) * ((total_frames / frame_skip) - processed_frames)
+                    fps_processed = processed_frames / elapsed
+                    
+                    print(f"Progress: {percentage:.1f}% | {processed_frames}/{total_frames//frame_skip} frames | "
+                          f"FPS: {fps_processed:.1f} | Elapsed: {elapsed:.1f}s | Remaining: {remaining:.1f}s")
+                    last_progress_time = current_time
                     
             except Exception as e:
                 print(f"Error processing frame {frame_count}: {str(e)}")
@@ -470,9 +506,39 @@ def process_video(video_path, output_path):
     finally:
         # Release resources
         cap.release()
-        out.release()
         cv2.destroyAllWindows()
-        print(f"Processing completed. Processed {frame_count} frames.")
+        
+        # Calculate final statistics
+        total_time = time.time() - start_time
+        avg_fps = processed_frames / total_time if total_time > 0 else 0
+        
+        # Save results to JSON
+        output_data = {
+            'processing_date': time.strftime('%Y-%m-%d %H:%M:%S'),
+            'video_path': video_path,
+            'total_frames': processed_frames,
+            'fps': fps,
+            'frame_skip': frame_skip,
+            'processing_stats': {
+                'total_time': total_time,
+                'average_fps': avg_fps,
+                'frames_processed': processed_frames,
+                'frames_skipped': total_frames - processed_frames
+            },
+            'results': results
+        }
+        
+        # Ensure output directory exists
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        
+        with open(output_path, 'w') as f:
+            json.dump(output_data, f, indent=2)
+        
+        print(f"\nProcessing completed!")
+        print(f"Total frames processed: {processed_frames}")
+        print(f"Total time: {total_time:.1f} seconds")
+        print(f"Average processing speed: {avg_fps:.1f} FPS")
+        print(f"Results saved to {output_path}")
 
 def main():
     """
